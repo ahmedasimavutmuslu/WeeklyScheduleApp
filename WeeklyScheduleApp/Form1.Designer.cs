@@ -1,6 +1,6 @@
 ﻿namespace WeeklyScheduleApp
 {
-    partial class Form1
+    partial class FormWeeklyScheduleAppStart
     {
         /// <summary>
         ///  Required designer variable.
@@ -28,10 +28,16 @@
         /// </summary>
         private void InitializeComponent()
         {
-            components = new System.ComponentModel.Container();
+            SuspendLayout();
+            // 
+            // FormWeeklyScheduleAppStart
+            // 
+            AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
-            Text = "Form1";
+            ClientSize = new Size(1262, 673);
+            Name = "FormWeeklyScheduleAppStart";
+            Text = "Schedule App";
+            ResumeLayout(false);
         }
 
         #endregion
