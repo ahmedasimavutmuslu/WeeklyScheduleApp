@@ -16,4 +16,4 @@ namespace WeeklyScheduleApp.Models
         public ICollection<UserTaskHistory> TaskHistories { get; set; } = new List<UserTaskHistory>();
     }
 }
-}
+

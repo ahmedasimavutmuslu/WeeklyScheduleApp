@@ -1,4 +1,5 @@
 using WeeklyScheduleApp.Data;
+using WeeklyScheduleApp.Views;
 
 namespace WeeklyScheduleApp
 {
@@ -10,14 +11,24 @@ namespace WeeklyScheduleApp
         [STAThread]
         static void Main()
         {
-            // To customize application configuration such as set high DPI settings or default font,
-            // see https://aka.ms/applicationconfiguration.
             ApplicationConfiguration.Initialize();
-            Application.Run(new FormWeeklyScheduleAppStart());
 
+            // Veritabanını ve seed datayı oluştur
             using (var db = new AppDbContext())
             {
-                db.Database.EnsureCreatedAsync(); // Veritabanı yoksa tablolarıyla birlikte oluşturur
+                db.Database.EnsureCreated();
+            }
+
+            // Giriş ekranını aç
+            using (var loginForm = new LoginForm())
+            {
+                if (loginForm.ShowDialog() == DialogResult.OK && loginForm.LoggedInUser != null)
+                {
+                    var currentUser = loginForm.LoggedInUser;
+
+                    // Ana formu açıyoruz (MainForm adında formunuzun olduğunu varsayıyoruz)
+                    Application.Run(new MainForm(currentUser));
+                }
             }
         }
     }
