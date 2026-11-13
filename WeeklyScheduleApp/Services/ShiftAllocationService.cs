@@ -21,23 +21,22 @@ namespace WeeklyScheduleApp.Services
             // Her çalışan için son atanan görevi tutmak (ardışık görev yasağı için)
             Dictionary<int, string> lastAssignedTask = new Dictionary<int, string>();
 
-            foreach (var block in blocks)
+            for (int blockIndex = 0; blockIndex < blocks.Count; blockIndex++)
             {
+                var block = blocks[blockIndex];
                 int employeeCount = selectedEmployees.Count;
 
                 if (employeeCount == 2)
                 {
-                    // KURAL: 2 kişi varsa -> 1. Kişi: Live + Audit, 2. Kişi: MsgReport + Audit (Dönüşümlü)
-                    AssignForTwoEmployees(selectedEmployees, block, lastAssignedTask, db, date, shiftId);
+                    // 2 kişi için blok indeksini de gönderiyoruz (Rotasyon için)
+                    AssignForTwoEmployees(selectedEmployees, block, blockIndex, db, date, shiftId);
                 }
                 else if (employeeCount == 3)
                 {
-                    // KURAL: 3 kişi varsa -> Audit, MsgReport, Live bire bir paylaştırılır
                     AssignForThreeEmployees(selectedEmployees, block, lastAssignedTask, db, date, shiftId);
                 }
                 else if (employeeCount >= 4)
                 {
-                    // KURAL: 4+ kişi varsa -> Haftalık adalet kontrolüne göre Other verilebilir
                     AssignForFourOrMoreEmployees(selectedEmployees, block, lastAssignedTask, db, date, shiftId);
                 }
             }
@@ -68,42 +67,58 @@ namespace WeeklyScheduleApp.Services
             return blocks;
         }
 
-        private void AssignForTwoEmployees(List<EmployeeShiftInput> employees, (TimeSpan Start, TimeSpan End) block, Dictionary<int, string> lastAssignedTask, AppDbContext db, DateTime date, int shiftId)
+        private void AssignForTwoEmployees(List<EmployeeShiftInput> employees, (TimeSpan Start, TimeSpan End) block, int blockIndex, AppDbContext db, DateTime date, int shiftId)
         {
-            // 2 kişi için: Her blokta Audit zorunlu yanına Live veya MsgReport eklenir
-            string[] tasksForBlock = { "Live+Audit", "MsgReport+Audit" };
+            // 2 kişi için olası iki ana kombinasyon:
+            // Kombinasyon A: 1. Çalışan = Live + Audit, 2. Çalışan = MsgReport + Audit
+            // Kombinasyon B: 1. Çalışan = MsgReport + Audit, 2. Çalışan = Live + Audit
 
-            for (int i = 0; i < employees.Count; i++)
+            string task1, task2;
+
+            // Blok indeksine göre (0, 1, 2, 3) görevleri kendi aralarında döndürelim (Rotasyon)
+            if (blockIndex % 2 == 0)
             {
-                var emp = employees[i];
-                string assignedTask = tasksForBlock[i % tasksForBlock.Length];
-
-                // Ardışık görev yasağı kontrolü ve kaydetme
-                SaveAllocation(db, emp.UserId, block.Start, block.End, assignedTask, date, shiftId);
+                task1 = "Live+Audit";
+                task2 = "MsgReport+Audit";
             }
+            else
+            {
+                task1 = "MsgReport+Audit";
+                task2 = "Live+Audit";
+            }
+
+            // Çalışanlara ata
+            SaveAllocation(db, employees[0].UserId, block.Start, block.End, task1, date, shiftId);
+            SaveAllocation(db, employees[1].UserId, block.Start, block.End, task2, date, shiftId);
         }
 
         private void AssignForThreeEmployees(List<EmployeeShiftInput> employees, (TimeSpan Start, TimeSpan End) block, Dictionary<int, string> lastAssignedTask, AppDbContext db, DateTime date, int shiftId)
         {
-            // 3 kişi için: Live, MsgReport, Audit rotasyonu
+            // O blok için tüm ana görevlerin havuzu (Her görev 1 kez yapılmalı)
             var availableTasks = new List<string>(_coreTasks);
 
             foreach (var emp in employees)
             {
-                // Bir önceki bloktaki görevi hariç tut (Ardışık görev yasağı)
+                // Aday görevler: Hem bu blokta henüz seçilmemiş olanlar hem de kişinin kendi son görevi (ardışık yasağı) hariç tutulur
+                var candidateTasks = new List<string>(availableTasks);
+
                 if (lastAssignedTask.TryGetValue(emp.UserId, out string? lastTask))
                 {
-                    availableTasks.Remove(lastTask);
+                    candidateTasks.Remove(lastTask);
                 }
 
-                // Eğer liste boşaldıysa güvenli fallback
-                if (availableTasks.Count == 0) availableTasks = new List<string>(_coreTasks);
+                // Eğer ardışık yasak yüzünden havuz tamamen bittiyse, en azından blokta kalan görevlerden devam et
+                if (candidateTasks.Count == 0)
+                {
+                    candidateTasks = new List<string>(availableTasks);
+                }
 
-                // Haftalık en az çalışana öncelik ver (Adalet Algoritması)
-                string chosenTask = GetFairTaskForUser(db, emp.UserId, availableTasks);
+                // Haftalık adalet kuralına göre (eşitlik durumunda rastgele seçen) görevi seç
+                string chosenTask = GetFairTaskForUser(db, emp.UserId, candidateTasks);
 
                 SaveAllocation(db, emp.UserId, block.Start, block.End, chosenTask, date, shiftId);
 
+                // Seçilen görevi bu çalışan için son görev olarak kaydet ve genel havuzdan düş
                 lastAssignedTask[emp.UserId] = chosenTask;
                 availableTasks.Remove(chosenTask);
             }
@@ -111,20 +126,30 @@ namespace WeeklyScheduleApp.Services
 
         private void AssignForFourOrMoreEmployees(List<EmployeeShiftInput> employees, (TimeSpan Start, TimeSpan End) block, Dictionary<int, string> lastAssignedTask, AppDbContext db, DateTime date, int shiftId)
         {
-            // 4+ kişi: Diğerleri ana görevleri dönerken, haftalık dengesi eşit olan kişiye Other verilebilir
             foreach (var emp in employees)
             {
-                bool canTakeOther = CheckIfUserEligibleForOther(db, emp.UserId);
+                // 1. Önceki blokta bu kişi "Other" almış mı kontrol edelim
+                bool hadOtherLastBlock = false;
+                if (lastAssignedTask.TryGetValue(emp.UserId, out string? lastTask) && lastTask == "Other")
+                {
+                    hadOtherLastBlock = true;
+                }
 
                 string chosenTask;
-                if (canTakeOther && new Random().Next(0, 2) == 1) // Örnek dengeleme mantığı
+
+                // Eğer son blokta Other aldıysa, bu blokta KESİNLİKLE Other veremeyiz (Ardışık Other yasağı)
+                bool canTakeOther = !hadOtherLastBlock && CheckIfUserEligibleForOther(db, emp.UserId);
+
+                if (canTakeOther && new Random().Next(0, 2) == 1) // %50 şans veya dengeleme mantığıyla
                 {
                     chosenTask = "Other";
                 }
                 else
                 {
-                    var availableTasks = new List<string>(_coreTasks);
-                    if (lastAssignedTask.TryGetValue(emp.UserId, out string? lastTask))
+                    var availableTasks = new List<string>(_coreTasks); // "Live", "MsgReport", "Audit"
+
+                    // Normal ardışık görev yasağı (Eğer son görev core task ise onu bu blokta hariç tut)
+                    if (lastTask != null && lastTask != "Other" && availableTasks.Contains(lastTask))
                     {
                         availableTasks.Remove(lastTask);
                     }
@@ -134,32 +159,42 @@ namespace WeeklyScheduleApp.Services
                 }
 
                 SaveAllocation(db, emp.UserId, block.Start, block.End, chosenTask, date, shiftId);
+
+                // Bu çalışanın bu bloktaki son görevini güncelle
                 lastAssignedTask[emp.UserId] = chosenTask;
             }
         }
 
         private string GetFairTaskForUser(AppDbContext db, int userId, List<string> candidateTasks)
         {
-            // Haftalık kümülatif süresi en az olan görevi seç
+            // Haftalık kümülatif süreleri al
             var userHistory = db.UserTaskHistories
                 .Where(h => h.UserId == userId)
                 .GroupBy(h => h.TaskType)
                 .ToDictionary(g => g.Key, g => g.Sum(h => h.MinutesWorked));
 
-            string bestTask = candidateTasks.First();
             int minMinutes = int.MaxValue;
 
+            // Adaylar arasından en az süre çalışılan dakikayı bul
             foreach (var task in candidateTasks)
             {
                 int minutes = userHistory.TryGetValue(task, out int val) ? val : 0;
                 if (minutes < minMinutes)
                 {
                     minMinutes = minutes;
-                    bestTask = task;
                 }
             }
 
-            return bestTask;
+            // En az süreye sahip olan (eşit olan) tüm görevleri listele (Örn: Hem Live hem Audit 0 dakika ise ikisi de adaydır)
+            var bestTasks = candidateTasks.Where(task =>
+            {
+                int minutes = userHistory.TryGetValue(task, out int val) ? val : 0;
+                return minutes == minMinutes;
+            }).ToList();
+
+            // 📌 KRİTİK DÜZELTME: Süreler eşitse hep ilkini seçmek yerine aralarından rastgele seç (Adaleti sağlar, Live yığılmasını önler)
+            int index = new Random().Next(bestTasks.Count);
+            return bestTasks[index];
         }
 
         private bool CheckIfUserEligibleForOther(AppDbContext db, int userId)

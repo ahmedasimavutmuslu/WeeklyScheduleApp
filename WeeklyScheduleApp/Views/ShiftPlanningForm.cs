@@ -100,11 +100,20 @@ namespace WeeklyScheduleApp.Views
 
                 foreach (DataGridViewRow row in dgvEmployees.Rows)
                 {
-                    bool isSelected = Convert.ToBoolean(row.Cells["Select"].Value ?? false);
+                    // Yeni satır (boş satır) kontrolü
+                    if (row.IsNewRow) continue;
+
+                    // Checkbox hücresinin değerini güvenli bir şekilde alalım
+                    bool isSelected = false;
+                    if (row.Cells["Select"].Value != null)
+                    {
+                        bool.TryParse(row.Cells["Select"].Value.ToString(), out isSelected);
+                    }
+
                     if (isSelected)
                     {
                         int userId = Convert.ToInt32(row.Cells["UserId"].Value);
-                        string username = row.Cells["Username"].Value.ToString() ?? "";
+                        string username = row.Cells["Username"].Value?.ToString() ?? "";
 
                         TimeSpan? customTime = null;
                         if (row.Cells["CustomStartTime"].Value != null)
@@ -149,14 +158,18 @@ namespace WeeklyScheduleApp.Views
         {
             using (var db = new AppDbContext())
             {
-                // O günkü ve o vardiyudaki atamaları veritabanından çekip gösterelim
-                var allocations = db.ShiftSchedules
+                // 1. Adım: Veriyi SQLite'ı yormadan önce belleğe (ToList) çekelim
+                var schedules = db.ShiftSchedules
                     .Where(s => s.Date.Date == date.Date && s.IdShift == shiftId)
                     .Include(s => s.User)
                     .Include(s => s.TaskAllocations)
+                    .ToList(); // 👈 SQLite sorgusu burada biter, gerisi C# tarafında döner
+
+                // 2. Adım: Bellekte (RAM üzerinde) nesneleri birleştirelim
+                var allocations = schedules
                     .SelectMany(s => s.TaskAllocations.Select(t => new
                     {
-                        Calisan = s.User!.Username,
+                        Calisan = s.User != null ? s.User.Username : "Bilinmiyor",
                         BlokBaslangic = t.BlockStart.ToString(@"hh\:mm"),
                         BlokBitis = t.BlockEnd.ToString(@"hh\:mm"),
                         Gorev = t.TaskType
@@ -164,6 +177,21 @@ namespace WeeklyScheduleApp.Views
                     .ToList();
 
                 dgvResult.DataSource = allocations;
+            }
+        }
+
+        private void btnClearShiftPlans_Click(object sender, EventArgs e)
+        {
+            using (var db = new AppDbContext())
+            {
+                // İlişkili tabloları sırasıyla temizleyelim
+                db.TaskAllocations.RemoveRange(db.TaskAllocations);
+                db.ShiftSchedules.RemoveRange(db.ShiftSchedules);
+                db.UserTaskHistories.RemoveRange(db.UserTaskHistories);
+
+                db.SaveChanges();
+
+                MessageBox.Show("Tüm eski vardiya ve görev geçmişi temizlendi!", "Bilgi", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
     }

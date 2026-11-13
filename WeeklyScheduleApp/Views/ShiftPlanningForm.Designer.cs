@@ -38,6 +38,7 @@
             SpecificTimeToStart = new DataGridViewTextBoxColumn();
             cmbShift = new ComboBox();
             dtpDate = new DateTimePicker();
+            btnClearShiftPlans = new Button();
             tableLayoutPanel1.SuspendLayout();
             groupBoxDetails.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)dgvResult).BeginInit();
@@ -61,6 +62,7 @@
             // groupBoxDetails
             // 
             groupBoxDetails.Controls.Add(dgvResult);
+            groupBoxDetails.Controls.Add(btnClearShiftPlans);
             groupBoxDetails.Controls.Add(btnGenerateSchedule);
             groupBoxDetails.Controls.Add(dgvEmployees);
             groupBoxDetails.Controls.Add(cmbShift);
@@ -139,6 +141,16 @@
             dtpDate.Size = new Size(250, 27);
             dtpDate.TabIndex = 0;
             // 
+            // btnClearShiftPlans
+            // 
+            btnClearShiftPlans.Location = new Point(458, 312);
+            btnClearShiftPlans.Name = "btnClearShiftPlans";
+            btnClearShiftPlans.Size = new Size(156, 57);
+            btnClearShiftPlans.TabIndex = 1;
+            btnClearShiftPlans.Text = "Denemeleri Temizle";
+            btnClearShiftPlans.UseVisualStyleBackColor = true;
+            btnClearShiftPlans.Click += btnClearShiftPlans_Click;
+            // 
             // ShiftPlanningForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
@@ -167,5 +179,6 @@
         private DataGridViewCheckBoxColumn Select;
         private DataGridViewTextBoxColumn Username;
         private DataGridViewTextBoxColumn SpecificTimeToStart;
+        private Button btnClearShiftPlans;
     }
 }
