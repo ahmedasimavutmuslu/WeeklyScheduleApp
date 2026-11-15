@@ -1,4 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
 using WeeklyScheduleApp.Data;
 using WeeklyScheduleApp.Models;
 
@@ -11,37 +14,105 @@ namespace WeeklyScheduleApp.Services
         public void GenerateSchedule(int shiftId, DateTime date, List<EmployeeShiftInput> selectedEmployees)
         {
             using var db = new AppDbContext();
+            GenerateDailyScheduleInternal(shiftId, date, selectedEmployees, db);
+            db.SaveChanges();
+        }
 
-            // 1. Adım: Vardiya saat aralığını belirle
-            (TimeSpan shiftStart, TimeSpan shiftEnd) = GetShiftTimes(shiftId);
+        // Toplu üretim (Haftalık/Aylık) metodu
+        public void GenerateScheduleForDateRange(int shiftId, DateTime startDate, DateTime endDate, List<EmployeeShiftInput> selectedEmployees)
+        {
+            using var db = new AppDbContext();
 
-            // 2. Adım: 2 saatlik 4 bloğu oluştur (0-2 saat, 2-4 saat, 4-6 saat, 6-8 saat)
-            var blocks = GenerateTimeBlocks(shiftStart);
-
-            // Her çalışan için son atanan görevi tutmak (ardışık görev yasağı için)
-            Dictionary<int, string> lastAssignedTask = new Dictionary<int, string>();
-
-            for (int blockIndex = 0; blockIndex < blocks.Count; blockIndex++)
+            // Başlangıç ve bitiş tarihleri arasındaki her gün için döngü başlatalım
+            for (DateTime date = startDate.Date; date <= endDate.Date; date = date.AddDays(1))
             {
-                var block = blocks[blockIndex];
-                int employeeCount = selectedEmployees.Count;
+                // 1. O gün için daha önceden yapılmış eski bir plan varsa temizleyelim
+                var existingSchedules = db.ShiftSchedules
+                    .Where(s => s.Date.Date == date.Date && s.IdShift == shiftId)
+                    .Include(s => s.TaskAllocations)
+                    .ToList();
 
-                if (employeeCount == 2)
+                if (existingSchedules.Any())
                 {
-                    // 2 kişi için blok indeksini de gönderiyoruz (Rotasyon için)
-                    AssignForTwoEmployees(selectedEmployees, block, blockIndex, db, date, shiftId);
+                    foreach (var schedule in existingSchedules)
+                    {
+                        db.TaskAllocations.RemoveRange(schedule.TaskAllocations);
+                        db.ShiftSchedules.Remove(schedule);
+                    }
+                    db.SaveChanges();
                 }
-                else if (employeeCount == 3)
-                {
-                    AssignForThreeEmployees(selectedEmployees, block, lastAssignedTask, db, date, shiftId);
-                }
-                else if (employeeCount >= 4)
-                {
-                    AssignForFourOrMoreEmployees(selectedEmployees, block, lastAssignedTask, db, date, shiftId);
-                }
+
+                // 2. O gün için günlük algoritmayı aynı veritabanı bağlantısıyla çalıştır
+                GenerateDailyScheduleInternal(shiftId, date.Date, selectedEmployees, db);
             }
 
             db.SaveChanges();
+        }
+
+        private void GenerateDailyScheduleInternal(int shiftId, DateTime date, List<EmployeeShiftInput> selectedEmployees, AppDbContext db)
+        {
+            // 1. Standart vardiya başlangıç saatini al (Referans olması için)
+            (TimeSpan defaultShiftStart, _) = GetShiftTimes(shiftId);
+
+            // 2. Her çalışanın kendi kayan çalışma penceresini (4 blok / 8 saat) belirleyelim
+            var employeeSchedules = new Dictionary<int, List<(TimeSpan Start, TimeSpan End)>>();
+
+            foreach (var emp in selectedEmployees)
+            {
+                TimeSpan startTime = emp.CustomStartTime ?? defaultShiftStart;
+
+                var empBlocks = new List<(TimeSpan Start, TimeSpan End)>();
+                for (int i = 0; i < 4; i++)
+                {
+                    TimeSpan blockStart = startTime.Add(TimeSpan.FromHours(i * 2));
+                    TimeSpan blockEnd = blockStart.Add(TimeSpan.FromHours(2));
+                    empBlocks.Add((blockStart, blockEnd));
+                }
+
+                employeeSchedules[emp.UserId] = empBlocks;
+            }
+
+            // 3. Tüm çalışanların kapsandığı toplam zaman aralığındaki tüm benzersiz 2 saatlik zaman dilimlerini bulalım
+            var allTimeSlots = employeeSchedules.Values
+                .SelectMany(b => b)
+                .Distinct()
+                .OrderBy(b => b.Start)
+                .ToList();
+
+            Dictionary<int, string> lastAssignedTask = new Dictionary<int, string>();
+
+            // 4. Her bir zaman dilimi (slot) için o an mesaide olan çalışanları tespit edip görev atayalım
+            for (int slotIndex = 0; slotIndex < allTimeSlots.Count; slotIndex++)
+            {
+                var slot = allTimeSlots[slotIndex];
+
+                var activeEmployeesInSlot = selectedEmployees.Where(emp =>
+                {
+                    var blocks = employeeSchedules[emp.UserId];
+                    return blocks.Any(b => b.Start == slot.Start && b.End == slot.End);
+                }).ToList();
+
+                int activeCount = activeEmployeesInSlot.Count;
+                if (activeCount == 0) continue;
+
+                if (activeCount == 1)
+                {
+                    SaveAllocation(db, activeEmployeesInSlot[0].UserId, slot.Start, slot.End, "Live+MsgReport+Audit", date, shiftId);
+                    lastAssignedTask[activeEmployeesInSlot[0].UserId] = "Live+MsgReport+Audit";
+                }
+                else if (activeCount == 2)
+                {
+                    AssignForTwoEmployees(activeEmployeesInSlot, slot, slotIndex, db, date, shiftId);
+                }
+                else if (activeCount == 3)
+                {
+                    AssignForThreeEmployees(activeEmployeesInSlot, slot, lastAssignedTask, db, date, shiftId);
+                }
+                else if (activeCount >= 4)
+                {
+                    AssignForFourOrMoreEmployees(activeEmployeesInSlot, slot, lastAssignedTask, db, date, shiftId);
+                }
+            }
         }
 
         private (TimeSpan start, TimeSpan end) GetShiftTimes(int shiftId)
@@ -55,27 +126,10 @@ namespace WeeklyScheduleApp.Services
             };
         }
 
-        private List<(TimeSpan Start, TimeSpan End)> GenerateTimeBlocks(TimeSpan shiftStart)
-        {
-            var blocks = new List<(TimeSpan, TimeSpan)>();
-            for (int i = 0; i < 4; i++)
-            {
-                TimeSpan blockStart = shiftStart.Add(TimeSpan.FromHours(i * 2));
-                TimeSpan blockEnd = blockStart.Add(TimeSpan.FromHours(2));
-                blocks.Add((blockStart, blockEnd));
-            }
-            return blocks;
-        }
-
         private void AssignForTwoEmployees(List<EmployeeShiftInput> employees, (TimeSpan Start, TimeSpan End) block, int blockIndex, AppDbContext db, DateTime date, int shiftId)
         {
-            // 2 kişi için olası iki ana kombinasyon:
-            // Kombinasyon A: 1. Çalışan = Live + Audit, 2. Çalışan = MsgReport + Audit
-            // Kombinasyon B: 1. Çalışan = MsgReport + Audit, 2. Çalışan = Live + Audit
-
             string task1, task2;
 
-            // Blok indeksine göre (0, 1, 2, 3) görevleri kendi aralarında döndürelim (Rotasyon)
             if (blockIndex % 2 == 0)
             {
                 task1 = "Live+Audit";
@@ -87,48 +141,87 @@ namespace WeeklyScheduleApp.Services
                 task2 = "Live+Audit";
             }
 
-            // Çalışanlara ata
             SaveAllocation(db, employees[0].UserId, block.Start, block.End, task1, date, shiftId);
             SaveAllocation(db, employees[1].UserId, block.Start, block.End, task2, date, shiftId);
         }
 
         private void AssignForThreeEmployees(List<EmployeeShiftInput> employees, (TimeSpan Start, TimeSpan End) block, Dictionary<int, string> lastAssignedTask, AppDbContext db, DateTime date, int shiftId)
         {
-            // O blok için tüm ana görevlerin havuzu (Her görev 1 kez yapılmalı)
-            var availableTasks = new List<string>(_coreTasks);
-
-            foreach (var emp in employees)
+            // 3 çalışan için olası tüm görev kombinasyonları (3! = 6 farklı dağılım)
+            var allPermutations = new List<List<string>>
             {
-                // Aday görevler: Hem bu blokta henüz seçilmemiş olanlar hem de kişinin kendi son görevi (ardışık yasağı) hariç tutulur
-                var candidateTasks = new List<string>(availableTasks);
+                new List<string> { "Live", "MsgReport", "Audit" },
+                new List<string> { "Live", "Audit", "MsgReport" },
+                new List<string> { "MsgReport", "Live", "Audit" },
+                new List<string> { "MsgReport", "Audit", "Live" },
+                new List<string> { "Audit", "Live", "MsgReport" },
+                new List<string> { "Audit", "MsgReport", "Live" }
+            };
 
-                if (lastAssignedTask.TryGetValue(emp.UserId, out string? lastTask))
+            List<string> bestAssignment = null;
+            int minPenalty = int.MaxValue;
+
+            // Rastgelelik için kombinasyonları karıştırıyoruz
+            var randomizedPermutations = allPermutations.OrderBy(x => Guid.NewGuid()).ToList();
+
+            foreach (var perm in randomizedPermutations)
+            {
+                int penalty = 0;
+
+                for (int i = 0; i < employees.Count; i++)
                 {
-                    candidateTasks.Remove(lastTask);
+                    int userId = employees[i].UserId;
+                    string assignedTask = perm[i];
+
+                    // 📌 Ardışık görev yasağı ihlali kontrolü (Büyük ceza puanı verilir)
+                    if (lastAssignedTask.TryGetValue(userId, out string? lastTask) && lastTask == assignedTask)
+                    {
+                        penalty += 10000;
+                    }
                 }
 
-                // Eğer ardışık yasak yüzünden havuz tamamen bittiyse, en azından blokta kalan görevlerden devam et
-                if (candidateTasks.Count == 0)
-                {
-                    candidateTasks = new List<string>(availableTasks);
-                }
+                // Adalet dengesi için ek ceza (aynı görevi üst üste çok alanlara dengeleme cezası)
+                penalty += GetFairnessPenalty(db, employees, perm);
 
-                // Haftalık adalet kuralına göre (eşitlik durumunda rastgele seçen) görevi seç
-                string chosenTask = GetFairTaskForUser(db, emp.UserId, candidateTasks);
+                if (penalty < minPenalty)
+                {
+                    minPenalty = penalty;
+                    bestAssignment = perm;
+                }
+            }
+
+            // En uygun ve kurallara uyan dağılımı kaydediyoruz
+            for (int i = 0; i < employees.Count; i++)
+            {
+                var emp = employees[i];
+                string chosenTask = bestAssignment[i];
 
                 SaveAllocation(db, emp.UserId, block.Start, block.End, chosenTask, date, shiftId);
-
-                // Seçilen görevi bu çalışan için son görev olarak kaydet ve genel havuzdan düş
                 lastAssignedTask[emp.UserId] = chosenTask;
-                availableTasks.Remove(chosenTask);
             }
+        }
+
+        private int GetFairnessPenalty(AppDbContext db, List<EmployeeShiftInput> employees, List<string> tasks)
+        {
+            int penalty = 0;
+            for (int i = 0; i < employees.Count; i++)
+            {
+                int userId = employees[i].UserId;
+                string task = tasks[i];
+
+                var userHistoryMinutes = db.UserTaskHistories
+                    .Where(h => h.UserId == userId && h.TaskType == task)
+                    .Sum(h => (int?)h.MinutesWorked) ?? 0;
+
+                penalty += userHistoryMinutes;
+            }
+            return penalty;
         }
 
         private void AssignForFourOrMoreEmployees(List<EmployeeShiftInput> employees, (TimeSpan Start, TimeSpan End) block, Dictionary<int, string> lastAssignedTask, AppDbContext db, DateTime date, int shiftId)
         {
             foreach (var emp in employees)
             {
-                // 1. Önceki blokta bu kişi "Other" almış mı kontrol edelim
                 bool hadOtherLastBlock = false;
                 if (lastAssignedTask.TryGetValue(emp.UserId, out string? lastTask) && lastTask == "Other")
                 {
@@ -136,19 +229,16 @@ namespace WeeklyScheduleApp.Services
                 }
 
                 string chosenTask;
-
-                // Eğer son blokta Other aldıysa, bu blokta KESİNLİKLE Other veremeyiz (Ardışık Other yasağı)
                 bool canTakeOther = !hadOtherLastBlock && CheckIfUserEligibleForOther(db, emp.UserId);
 
-                if (canTakeOther && new Random().Next(0, 2) == 1) // %50 şans veya dengeleme mantığıyla
+                if (canTakeOther && new Random().Next(0, 2) == 1)
                 {
                     chosenTask = "Other";
                 }
                 else
                 {
-                    var availableTasks = new List<string>(_coreTasks); // "Live", "MsgReport", "Audit"
+                    var availableTasks = new List<string>(_coreTasks);
 
-                    // Normal ardışık görev yasağı (Eğer son görev core task ise onu bu blokta hariç tut)
                     if (lastTask != null && lastTask != "Other" && availableTasks.Contains(lastTask))
                     {
                         availableTasks.Remove(lastTask);
@@ -159,15 +249,12 @@ namespace WeeklyScheduleApp.Services
                 }
 
                 SaveAllocation(db, emp.UserId, block.Start, block.End, chosenTask, date, shiftId);
-
-                // Bu çalışanın bu bloktaki son görevini güncelle
                 lastAssignedTask[emp.UserId] = chosenTask;
             }
         }
 
         private string GetFairTaskForUser(AppDbContext db, int userId, List<string> candidateTasks)
         {
-            // Haftalık kümülatif süreleri al
             var userHistory = db.UserTaskHistories
                 .Where(h => h.UserId == userId)
                 .GroupBy(h => h.TaskType)
@@ -175,7 +262,6 @@ namespace WeeklyScheduleApp.Services
 
             int minMinutes = int.MaxValue;
 
-            // Adaylar arasından en az süre çalışılan dakikayı bul
             foreach (var task in candidateTasks)
             {
                 int minutes = userHistory.TryGetValue(task, out int val) ? val : 0;
@@ -185,27 +271,24 @@ namespace WeeklyScheduleApp.Services
                 }
             }
 
-            // En az süreye sahip olan (eşit olan) tüm görevleri listele (Örn: Hem Live hem Audit 0 dakika ise ikisi de adaydır)
             var bestTasks = candidateTasks.Where(task =>
             {
                 int minutes = userHistory.TryGetValue(task, out int val) ? val : 0;
                 return minutes == minMinutes;
             }).ToList();
 
-            // 📌 KRİTİK DÜZELTME: Süreler eşitse hep ilkini seçmek yerine aralarından rastgele seç (Adaleti sağlar, Live yığılmasını önler)
             int index = new Random().Next(bestTasks.Count);
             return bestTasks[index];
         }
 
         private bool CheckIfUserEligibleForOther(AppDbContext db, int userId)
         {
-            // Haftalık Live, MsgReport ve Audit sürelerinin birbirine yakın olup olmadığını kontrol eder (Tolerans: ±2 saat)
             var history = db.UserTaskHistories
                 .Where(h => h.UserId == userId && h.TaskType != "Other")
                 .GroupBy(h => h.TaskType)
                 .ToDictionary(g => g.Key, g => g.Sum(h => h.MinutesWorked));
 
-            if (history.Count < 3) return false; // Henüz tüm alanlarda çalışmamışsa Other alamaz
+            if (history.Count < 3) return false;
 
             int live = history.GetValueOrDefault("Live", 0);
             int msg = history.GetValueOrDefault("MsgReport", 0);
@@ -214,13 +297,11 @@ namespace WeeklyScheduleApp.Services
             int max = Math.Max(live, Math.Max(msg, audit));
             int min = Math.Min(live, Math.Min(msg, audit));
 
-            // Fark 120 dakikadan (2 saatten) azsa dengelidir, Other alabilir
             return (max - min) <= 120;
         }
 
         private void SaveAllocation(AppDbContext db, int userId, TimeSpan start, TimeSpan end, string taskType, DateTime date, int shiftId)
         {
-            // ShiftSchedule bul veya oluştur
             var schedule = db.ShiftSchedules
                 .FirstOrDefault(s => s.UserId == userId && s.Date.Date == date.Date && s.IdShift == shiftId);
 
@@ -236,7 +317,6 @@ namespace WeeklyScheduleApp.Services
                 db.SaveChanges();
             }
 
-            // TaskAllocation ekle
             var allocation = new TaskAllocation
             {
                 ShiftScheduleId = schedule.Id,
@@ -246,7 +326,6 @@ namespace WeeklyScheduleApp.Services
             };
             db.TaskAllocations.Add(allocation);
 
-            // Eğer Other değilse kümülatif geçmişe (UserTaskHistory) 120 dk ekle
             if (taskType != "Other" && !taskType.Contains("+"))
             {
                 db.UserTaskHistories.Add(new UserTaskHistory

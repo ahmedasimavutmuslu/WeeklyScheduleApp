@@ -40,5 +40,17 @@ namespace WeeklyScheduleApp.Views
             UserManagementForm userManagementForm = new UserManagementForm();
             userManagementForm.ShowDialog();
         }
+
+        private void btnOpenReport_Click(object sender, EventArgs e)
+        {
+            FairnessReportForm reportForm = new FairnessReportForm();
+            reportForm.ShowDialog();
+        }
+
+        private void btnOpenDetail_Click(object sender, EventArgs e)
+        {
+            ShiftDetailForm detailForm = new ShiftDetailForm();
+            detailForm.ShowDialog();
+        }
     }
 }

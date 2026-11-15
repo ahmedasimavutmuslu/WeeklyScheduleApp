@@ -30,15 +30,18 @@
         {
             tableLayoutPanel1 = new TableLayoutPanel();
             groupBoxDetails = new GroupBox();
+            btnManualUpdate = new Button();
+            cmbEditTaskType = new ComboBox();
+            dtpEndDate = new DateTimePicker();
             dgvResult = new DataGridView();
+            btnClearShiftPlans = new Button();
             btnGenerateSchedule = new Button();
             dgvEmployees = new DataGridView();
             Select = new DataGridViewCheckBoxColumn();
             Username = new DataGridViewTextBoxColumn();
             SpecificTimeToStart = new DataGridViewTextBoxColumn();
             cmbShift = new ComboBox();
-            dtpDate = new DateTimePicker();
-            btnClearShiftPlans = new Button();
+            dtpStartDate = new DateTimePicker();
             tableLayoutPanel1.SuspendLayout();
             groupBoxDetails.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)dgvResult).BeginInit();
@@ -61,12 +64,15 @@
             // 
             // groupBoxDetails
             // 
+            groupBoxDetails.Controls.Add(btnManualUpdate);
+            groupBoxDetails.Controls.Add(cmbEditTaskType);
+            groupBoxDetails.Controls.Add(dtpEndDate);
             groupBoxDetails.Controls.Add(dgvResult);
             groupBoxDetails.Controls.Add(btnClearShiftPlans);
             groupBoxDetails.Controls.Add(btnGenerateSchedule);
             groupBoxDetails.Controls.Add(dgvEmployees);
             groupBoxDetails.Controls.Add(cmbShift);
-            groupBoxDetails.Controls.Add(dtpDate);
+            groupBoxDetails.Controls.Add(dtpStartDate);
             groupBoxDetails.Dock = DockStyle.Fill;
             groupBoxDetails.Location = new Point(387, 3);
             groupBoxDetails.Name = "groupBoxDetails";
@@ -74,6 +80,32 @@
             groupBoxDetails.TabIndex = 0;
             groupBoxDetails.TabStop = false;
             groupBoxDetails.Text = "Detaylar";
+            // 
+            // btnManualUpdate
+            // 
+            btnManualUpdate.Location = new Point(554, 527);
+            btnManualUpdate.Name = "btnManualUpdate";
+            btnManualUpdate.Size = new Size(151, 29);
+            btnManualUpdate.TabIndex = 7;
+            btnManualUpdate.Text = "Manuel Update";
+            btnManualUpdate.UseVisualStyleBackColor = true;
+            btnManualUpdate.Click += btnManualUpdate_Click;
+            // 
+            // cmbEditTaskType
+            // 
+            cmbEditTaskType.FormattingEnabled = true;
+            cmbEditTaskType.Items.AddRange(new object[] { "Live", "MsgReport", "Audit", "Other" });
+            cmbEditTaskType.Location = new Point(554, 473);
+            cmbEditTaskType.Name = "cmbEditTaskType";
+            cmbEditTaskType.Size = new Size(151, 28);
+            cmbEditTaskType.TabIndex = 6;
+            // 
+            // dtpEndDate
+            // 
+            dtpEndDate.Location = new Point(15, 59);
+            dtpEndDate.Name = "dtpEndDate";
+            dtpEndDate.Size = new Size(250, 27);
+            dtpEndDate.TabIndex = 5;
             // 
             // dgvResult
             // 
@@ -83,6 +115,16 @@
             dgvResult.RowHeadersWidth = 51;
             dgvResult.Size = new Size(481, 188);
             dgvResult.TabIndex = 4;
+            // 
+            // btnClearShiftPlans
+            // 
+            btnClearShiftPlans.Location = new Point(458, 312);
+            btnClearShiftPlans.Name = "btnClearShiftPlans";
+            btnClearShiftPlans.Size = new Size(156, 57);
+            btnClearShiftPlans.TabIndex = 1;
+            btnClearShiftPlans.Text = "Denemeleri Temizle";
+            btnClearShiftPlans.UseVisualStyleBackColor = true;
+            btnClearShiftPlans.Click += btnClearShiftPlans_Click;
             // 
             // btnGenerateSchedule
             // 
@@ -134,22 +176,12 @@
             cmbShift.Size = new Size(151, 28);
             cmbShift.TabIndex = 1;
             // 
-            // dtpDate
+            // dtpStartDate
             // 
-            dtpDate.Location = new Point(15, 61);
-            dtpDate.Name = "dtpDate";
-            dtpDate.Size = new Size(250, 27);
-            dtpDate.TabIndex = 0;
-            // 
-            // btnClearShiftPlans
-            // 
-            btnClearShiftPlans.Location = new Point(458, 312);
-            btnClearShiftPlans.Name = "btnClearShiftPlans";
-            btnClearShiftPlans.Size = new Size(156, 57);
-            btnClearShiftPlans.TabIndex = 1;
-            btnClearShiftPlans.Text = "Denemeleri Temizle";
-            btnClearShiftPlans.UseVisualStyleBackColor = true;
-            btnClearShiftPlans.Click += btnClearShiftPlans_Click;
+            dtpStartDate.Location = new Point(15, 26);
+            dtpStartDate.Name = "dtpStartDate";
+            dtpStartDate.Size = new Size(250, 27);
+            dtpStartDate.TabIndex = 0;
             // 
             // ShiftPlanningForm
             // 
@@ -172,7 +204,7 @@
         private TableLayoutPanel tableLayoutPanel1;
         private GroupBox groupBoxDetails;
         private ComboBox cmbShift;
-        private DateTimePicker dtpDate;
+        private DateTimePicker dtpStartDate;
         private DataGridView dgvResult;
         private Button btnGenerateSchedule;
         private DataGridView dgvEmployees;
@@ -180,5 +212,8 @@
         private DataGridViewTextBoxColumn Username;
         private DataGridViewTextBoxColumn SpecificTimeToStart;
         private Button btnClearShiftPlans;
+        private DateTimePicker dtpEndDate;
+        private Button btnManualUpdate;
+        private ComboBox cmbEditTaskType;
     }
 }

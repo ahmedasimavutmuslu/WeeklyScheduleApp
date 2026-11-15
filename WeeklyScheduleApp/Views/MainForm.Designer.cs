@@ -30,11 +30,13 @@
         {
             btnOpenPlanning = new Button();
             btnOpenUserManagement = new Button();
+            btnOpenReport = new Button();
+            btnOpenDetail = new Button();
             SuspendLayout();
             // 
             // btnOpenPlanning
             // 
-            btnOpenPlanning.Location = new Point(418, 261);
+            btnOpenPlanning.Location = new Point(263, 256);
             btnOpenPlanning.Name = "btnOpenPlanning";
             btnOpenPlanning.Size = new Size(151, 29);
             btnOpenPlanning.TabIndex = 0;
@@ -44,7 +46,7 @@
             // 
             // btnOpenUserManagement
             // 
-            btnOpenUserManagement.Location = new Point(659, 261);
+            btnOpenUserManagement.Location = new Point(504, 256);
             btnOpenUserManagement.Name = "btnOpenUserManagement";
             btnOpenUserManagement.Size = new Size(179, 29);
             btnOpenUserManagement.TabIndex = 1;
@@ -52,11 +54,33 @@
             btnOpenUserManagement.UseVisualStyleBackColor = true;
             btnOpenUserManagement.Click += btnOpenUserManagement_Click;
             // 
+            // btnOpenReport
+            // 
+            btnOpenReport.Location = new Point(773, 256);
+            btnOpenReport.Name = "btnOpenReport";
+            btnOpenReport.Size = new Size(172, 29);
+            btnOpenReport.TabIndex = 2;
+            btnOpenReport.Text = "Adalet ve Süre Raporu";
+            btnOpenReport.UseVisualStyleBackColor = true;
+            btnOpenReport.Click += btnOpenReport_Click;
+            // 
+            // btnOpenDetail
+            // 
+            btnOpenDetail.Location = new Point(263, 308);
+            btnOpenDetail.Name = "btnOpenDetail";
+            btnOpenDetail.Size = new Size(151, 29);
+            btnOpenDetail.TabIndex = 3;
+            btnOpenDetail.Text = "Shift Detaylarını Aç";
+            btnOpenDetail.UseVisualStyleBackColor = true;
+            btnOpenDetail.Click += btnOpenDetail_Click;
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1262, 673);
+            Controls.Add(btnOpenDetail);
+            Controls.Add(btnOpenReport);
             Controls.Add(btnOpenUserManagement);
             Controls.Add(btnOpenPlanning);
             Name = "MainForm";
@@ -68,5 +92,7 @@
 
         private Button btnOpenPlanning;
         private Button btnOpenUserManagement;
+        private Button btnOpenReport;
+        private Button btnOpenDetail;
     }
 }
